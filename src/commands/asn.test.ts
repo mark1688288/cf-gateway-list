@@ -9,7 +9,7 @@ import { asnCommand } from "./asn.ts";
 const TOKEN = "cfut_test_token_do_not_leak";
 const ACCOUNT = "accttest000000000000000000000001";
 
-type FakeList = { id: string; name: string; items: string[]; type?: string };
+type FakeList = { id: string; name: string; items: string[]; type?: string; omitCount?: boolean };
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status });
@@ -78,7 +78,7 @@ function createFake(mmdb: Uint8Array): {
           id: list.id,
           name: list.name,
           type: list.type ?? "IP",
-          count: list.items.length,
+          ...(list.omitCount ? {} : { count: list.items.length }),
         })),
         result_info: { page: 1, per_page: 1000, total_count: lists.length },
       });
@@ -99,7 +99,12 @@ function createFake(mmdb: Uint8Array): {
       return json({
         success: true,
         result: list
-          ? { id: list.id, name: list.name, type: list.type ?? "IP", count: list.items.length }
+          ? {
+              id: list.id,
+              name: list.name,
+              type: list.type ?? "IP",
+              ...(list.omitCount ? {} : { count: list.items.length }),
+            }
           : {},
       });
     }
@@ -297,6 +302,32 @@ test("asn update --dashboard refreshes other IP AS* lists and leaves the rest al
   assert.deepEqual(byId.L6?.items, ["192.0.2.0/24"]);
   assert.deepEqual(byId.L7?.items, ["bad.example"]);
   assert.equal(fake.ruleWrites, 0);
+});
+
+test("asn update --dashboard still runs when an owned list omits count on GET", async () => {
+  const { dir, configPath } = await setup();
+  const fake = createFake(asnMmdb());
+  fake.lists.push(
+    { id: "L1", name: "AS10206", type: "IP", items: ["14.1.0.0/16", "9.9.9.0/24"] },
+    {
+      id: "L90",
+      name: "gateway-list:block-90",
+      type: "DOMAIN",
+      items: ["bad.example"],
+      omitCount: true,
+    },
+    {
+      id: "L91",
+      name: "gateway-list:block-91",
+      type: "DOMAIN",
+      items: ["worse.example"],
+      omitCount: true,
+    },
+  );
+  assert.equal(await run(["update", "--dashboard"], { dir, configPath, fetch: fake.fetch }), 0);
+  assert.deepEqual(fake.lists[0]?.items.slice().sort(), ["14.1.0.0/16", "14.2.0.0/16"]);
+  assert.deepEqual(fake.lists[1]?.items, ["bad.example"]);
+  assert.deepEqual(fake.lists[2]?.items, ["worse.example"]);
 });
 
 test("asn update --dashboard --dry-run writes nothing", async () => {

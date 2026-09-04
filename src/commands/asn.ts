@@ -107,9 +107,15 @@ async function loadExisting(
   return out;
 }
 
-function assertKnownQuota(accountItems: number | null): asserts accountItems is number {
+function assertKnownQuota(
+  accountItems: number | null,
+  unknownCounts: readonly string[] = [],
+): asserts accountItems is number {
   if (accountItems === null) {
-    throw new AsnAbortError("account quota: list item count is unknown; refuse to change ASN lists");
+    const suffix = unknownCounts.length > 0 ? ` (${unknownCounts.join(", ")})` : "";
+    throw new AsnAbortError(
+      `account quota: list item count is unknown${suffix}; refuse to change ASN lists`,
+    );
   }
 }
 
@@ -201,7 +207,7 @@ async function runSingleAsn(
       ? planAsnAdd(extract, existing, ctx.config.plan.itemsPerList)
       : planAsnUpdate(extract, existing, ctx.config.plan.itemsPerList);
 
-  assertKnownQuota(ctx.quota.accountItems);
+  assertKnownQuota(ctx.quota.accountItems, ctx.quota.unknownCounts);
   const currentAsnItems = existing.reduce((sum, list) => sum + list.items.length, 0);
   const nextItems = checkAsnQuota({
     accountItems: ctx.quota.accountItems,
@@ -265,7 +271,7 @@ async function runDashboardUpdate(ctx: AsnContext, dryRun: boolean): Promise<num
     throw new AsnAbortError("asn update --dashboard: no AS<number> lists could be refreshed");
   }
 
-  assertKnownQuota(ctx.quota.accountItems);
+  assertKnownQuota(ctx.quota.accountItems, ctx.quota.unknownCounts);
   let currentAsnItems = 0;
   let desiredItems = 0;
   let creates = 0;

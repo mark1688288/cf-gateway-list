@@ -352,7 +352,7 @@ test("apply --dry-run refuses when other lists + desired exceed max_items", asyn
   assert.deepEqual(fake.writes, []);
 });
 
-test("apply refuses when an other list count stays unknown", async () => {
+test("apply counts other-list items when GET omits count", async () => {
   const { dir, configPath } = await setup(desiredOf([], ["ads.example.com"]));
   const fake = createFakeGateway();
   fake.lists.push({
@@ -362,10 +362,10 @@ test("apply refuses when an other list count stays unknown", async () => {
     items: ["x.example.com"],
     omitCount: true,
   });
-  const errors: string[] = [];
-  const orig = console.error;
-  console.error = (msg?: unknown) => {
-    errors.push(String(msg ?? ""));
+  const logs: string[] = [];
+  const orig = console.log;
+  console.log = (msg?: unknown) => {
+    logs.push(String(msg ?? ""));
   };
   try {
     const code = await applyCommand({
@@ -375,11 +375,11 @@ test("apply refuses when an other list count stays unknown", async () => {
       fetch: fake.fetch,
       ...creds,
     });
-    assert.equal(code, 2);
+    assert.equal(code, 0);
   } finally {
-    console.error = orig;
+    console.log = orig;
   }
-  assert.match(errors.join("\n"), /other list item count is unknown/);
+  assert.match(logs.join("\n"), /other 1 \+ desired 1 = 2/);
   assert.deepEqual(fake.writes, []);
 });
 

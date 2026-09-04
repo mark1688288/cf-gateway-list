@@ -123,7 +123,10 @@ export function accountSlotQuotaMessage(options: {
 export async function fillMissingCounts(
   lists: GatewayList[],
   getList: (listId: string) => Promise<GatewayList>,
-  options?: { ignoreGetErrors?: boolean },
+  options?: {
+    ignoreGetErrors?: boolean;
+    countItems?: (listId: string) => Promise<number>;
+  },
 ): Promise<GatewayList[]> {
   const out: GatewayList[] = [];
   for (const list of lists) {
@@ -131,17 +134,41 @@ export async function fillMissingCounts(
       out.push(list);
       continue;
     }
+
+    let merged: GatewayList = list;
+    let getFailed: unknown;
     try {
       const detail = await getList(list.id);
-      out.push({
+      merged = {
         ...list,
         count: detail.count,
         type: list.type ?? detail.type,
-      });
+      };
     } catch (error) {
-      if (!options?.ignoreGetErrors) throw error;
-      out.push(list);
+      getFailed = error;
     }
+
+    if (typeof merged.count === "number") {
+      out.push(merged);
+      continue;
+    }
+
+    if (options?.countItems) {
+      try {
+        const count = await options.countItems(list.id);
+        out.push({ ...merged, count });
+        continue;
+      } catch (error) {
+        if (options.ignoreGetErrors) {
+          out.push(merged);
+          continue;
+        }
+        throw getFailed ?? error;
+      }
+    }
+
+    if (getFailed && !options?.ignoreGetErrors) throw getFailed;
+    out.push(merged);
   }
   return out;
 }
@@ -151,7 +178,10 @@ export async function readLiveAccountQuota(
   prefix: string,
   options?: { ignoreGetErrors?: boolean },
 ): Promise<AccountQuotaSnapshot> {
-  const lists = await fillMissingCounts(await client.listLists(), (id) => client.getList(id), options);
+  const lists = await fillMissingCounts(await client.listLists(), (id) => client.getList(id), {
+    ...options,
+    countItems: async (id) => (await client.listListItems(id)).length,
+  });
   return accountQuotaFromLists(lists, prefix);
 }
 

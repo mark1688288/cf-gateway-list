@@ -113,6 +113,51 @@ test("fillMissingCounts GETs only rows without count", async () => {
   assert.equal(filled[1]?.count, 9);
 });
 
+test("fillMissingCounts counts items when GET still has no count", async () => {
+  const counted: string[] = [];
+  const filled = await fillMissingCounts(
+    [{ id: "miss", name: "gateway-list:block-90", type: "DOMAIN" }],
+    async (id) => ({ id, name: "gateway-list:block-90", type: "DOMAIN" }),
+    {
+      countItems: async (id) => {
+        counted.push(id);
+        return 390;
+      },
+    },
+  );
+  assert.deepEqual(counted, ["miss"]);
+  assert.equal(filled[0]?.count, 390);
+});
+
+test("fillMissingCounts counts items when GET fails", async () => {
+  const filled = await fillMissingCounts(
+    [{ id: "x", name: "x" }],
+    async () => {
+      throw new Error("nope");
+    },
+    { countItems: async () => 4 },
+  );
+  assert.equal(filled[0]?.count, 4);
+});
+
+test("fillMissingCounts prefers the GET error when item count also fails", async () => {
+  await assert.rejects(
+    () =>
+      fillMissingCounts(
+        [{ id: "x", name: "x" }],
+        async () => {
+          throw new Error("get failed");
+        },
+        {
+          countItems: async () => {
+            throw new Error("items failed");
+          },
+        },
+      ),
+    /get failed/,
+  );
+});
+
 test("fillMissingCounts can swallow get errors", async () => {
   await assert.rejects(
     () =>
@@ -129,6 +174,19 @@ test("fillMissingCounts can swallow get errors", async () => {
     { ignoreGetErrors: true },
   );
   assert.equal(filled[0]?.count, undefined);
+  const stillUnknown = await fillMissingCounts(
+    [{ id: "x", name: "x" }],
+    async () => {
+      throw new Error("nope");
+    },
+    {
+      ignoreGetErrors: true,
+      countItems: async () => {
+        throw new Error("items nope");
+      },
+    },
+  );
+  assert.equal(stillUnknown[0]?.count, undefined);
 });
 
 test("account-quota snapshot round-trips", async () => {
