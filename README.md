@@ -40,7 +40,7 @@ To add a remote source or change a personal list, edit `config.yaml` / the `*.tx
 
 ## Compile
 
-`compile` reads the sources in [`config.yaml`](config.yaml) and merges them into a desired snapshot. It works without a Cloudflare token. With credentials it also reads live list `count` values (read-only), subtracts items on lists you manage by hand, then applies the [budget](https://github.com/mark1688288/Cloudflare-ZeroTrust-Gateway-API-CLI/tree/main#quota-and-dropped).
+`compile` reads the sources in [`config.yaml`](config.yaml) and merges them into a desired snapshot. It works without a Cloudflare token. With credentials it also reads live list `count` values (read-only), subtracts items on lists you manage by hand, then applies the [budget](https://github.com/mark1688288/cf-gateway-list/tree/main#quota-and-dropped).
 
 Default sources:
 
@@ -159,7 +159,7 @@ Each list holds at most `items_per_list` items (default 1000). If the traffic fi
 ## Local
 
 ```bash
-cd Cloudflare-ZeroTrust-Gateway-API-CLI
+cd cf-gateway-list
 npm install
 cp .env.example .env   # token / account id; needed for lists / diff / apply / suggested / asn
 

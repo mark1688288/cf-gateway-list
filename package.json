@@ -1,5 +1,5 @@
 {
-  "name": "Cloudflare-ZeroTrust-Gateway-API-CLI",
+  "name": "cf-gateway-list",
   "version": "1.1.0",
   "private": true,
   "license": "MIT",
