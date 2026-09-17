@@ -2,13 +2,50 @@
 
 Manage **Cloudflare Gateway** allowlists, blocklists, and ASN IP reusable lists from git.
 
-Files in git are the **desired state**. `compile` fetches [OISD](https://small.oisd.nl/), [HaGeZi](https://github.com/hagezi/dns-blocklists), and your personal lists, folds child domains, and writes a snapshot. After you review that snapshot, `apply` incrementally patches Gateway lists and Allow/Block policies whose names start with `gateway-list`. GitHub Actions compiles weekly; **it does not change Cloudflare unless you opt in**.
+Files in git are the **desired state**. `compile` fetches [OISD](https://small.oisd.nl/)<sup>[1](#fn-oisd)</sup>, [HaGeZi](https://github.com/hagezi/dns-blocklists)<sup>[2](#fn-hagezi)</sup>, and your personal lists, folds child domains, and writes a snapshot. After you review that snapshot, `apply` incrementally patches Gateway lists and Allow/Block policies whose names start with `gateway-list`. GitHub Actions compiles weekly; **it does not change Cloudflare unless you opt in**.
 
 Allow is its own Gateway list plus an Allow policy with higher precedence than Block. Blocking a parent does not also block a child you have allowed.
 
-Separately, `asn add` / `asn update` create or refresh Gateway **IP** reusable lists from [MaxMind GeoLite2-ASN](https://dev.maxmind.com/geoip/docs/databases/asn/) (`.mmdb`). They never attach a policy — you wire the list in Zero Trust yourself.
+Separately, `asn add` / `asn update` create or refresh Gateway **IP** reusable lists from [MaxMind GeoLite2-ASN](https://dev.maxmind.com/geoip/docs/databases/asn/)<sup>[3](#fn-maxmind)</sup> (`.mmdb`). They never attach a policy — you wire the list in Zero Trust yourself.
 
 <img width="1376" height="768" alt="Cloudflare_Zero_Trust_GitOps_-_Slide_13" src="https://github.com/user-attachments/assets/bd73fb06-5f63-4e31-81d8-3bee9bc4d547" />
+
+## Quick
+
+`compile` never writes to Cloudflare. `apply` does. Dry-run the first apply.
+
+### Local
+
+```bash
+git clone https://github.com/mark1688288/cf-gateway-list.git
+cd cf-gateway-list
+npm install
+cp .env.example .env   # token / account id; needed for lists / diff / apply / suggested / asn
+```
+
+Put `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.env`. Token needs Account → Zero Trust → Read + Edit.
+
+```bash
+node src/cli.ts
+```
+
+```
+gateway-list> compile
+gateway-list> apply --dry-run
+gateway-list> apply
+```
+
+### Actions
+
+Fork this repository, then set up **your** fork (secrets and variables are not copied):
+
+1. Open the **Actions** tab and enable workflows.
+2. Enable **Sync Gateway lists**. The Monday schedule stays off until you do.
+3. **Settings → Secrets and variables → Actions**
+   - **Secrets** tab → **New repository secret** → name `CLOUDFLARE_API_TOKEN`, paste the token
+   - **Variables** tab → **New repository variable** → name `CLOUDFLARE_ACCOUNT_ID`, paste the account id (not a secret)
+
+The workflow compiles every Monday and when you run it by hand. It does **not** apply unless you check apply on a manual run, or set `AUTO_APPLY=true` for the schedule. Leave `AUTO_APPLY` off at first; read the Job Summary, then run **Sync Gateway lists** with apply checked.
 
 ## Workflow
 
@@ -158,15 +195,7 @@ Each list holds at most `items_per_list` items (default 1000). If the traffic fi
 
 ## Local
 
-```bash
-cd cf-gateway-list
-npm install
-cp .env.example .env   # token / account id; needed for lists / diff / apply / suggested / asn
-
-node src/cli.ts
-```
-
-That opens a shell. Type a command, then Enter:
+Setup is in [Quick](#quick). `node src/cli.ts` opens a shell. Type a command, then Enter:
 
 ```
 gateway-list> compile
@@ -201,30 +230,39 @@ One domain per line. Lines starting with `#`, `//`, or `!` are comments; a trail
 
 ## GitHub Actions
 
-1. Use this repository, or a fork (see below).
-2. Secrets:
-   - `CLOUDFLARE_API_TOKEN`
-3. Variables:
-   - `CLOUDFLARE_ACCOUNT_ID`
-   - `AUTO_APPLY` (optional; set to `true` to apply on the Monday schedule)
-4. [`.github/workflows/sync.yml`](.github/workflows/sync.yml) is already in the repo.
-   - Every Monday 03:00 UTC: `compile` + `suggested` + Job Summary + upload the snapshot artifact
-   - `workflow_dispatch`: checking apply writes the **artifact's** `desired.json` to Cloudflare
-   - Scheduled apply also requires `AUTO_APPLY=true`; a tripped safety guard fails the job
-   - No `pull_request` trigger: a PR *into this repository* cannot run compile or apply here. That is not your fork's own Actions (see below).
-   - A push to `main` that touches `src/`, `config.yaml`, allowlist, or blocklist compiles only — it does not apply
+Fork and credential setup is in [Quick](#quick). [`.github/workflows/sync.yml`](.github/workflows/sync.yml) is already in the repo.
 
-Leave `AUTO_APPLY` off at first. Remote sources change every week; read the Job Summary, then run `workflow_dispatch` with apply checked.
+- Every Monday 03:00 UTC: `compile` + `suggested` + Job Summary + upload the snapshot artifact
+- `workflow_dispatch`: checking apply writes the **artifact's** `desired.json` to Cloudflare
+- Scheduled apply also requires `AUTO_APPLY=true`; a tripped safety guard fails the job
+- No `pull_request` trigger: a PR *into this repository* cannot run compile or apply here. That is not your fork's own Actions.
+- A push to `main` that touches `src/`, `config.yaml`, allowlist, or blocklist compiles only — it does not apply
 
-### Fork
+The fork compiles against your Cloudflare account. It cannot use this repository's credentials.
 
-GitHub copies the workflow file but does not enable it, and does not copy secrets or variables. After you fork:
+### Pause the schedule
 
-1. Open the **Actions** tab and enable workflows.
-2. Enable **Sync Gateway lists**. The Monday schedule stays disabled on a fork until you do.
-3. Add your own `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable.
+Do this on **your** fork.
 
-The fork then compiles against your Cloudflare account. It cannot use this repository's credentials.
+| Objective | Do |
+| --- | --- |
+| No Monday run at all | Disable **Sync Gateway lists** |
+| Weekly compile, but never auto-apply | Leave `AUTO_APPLY` unset (the default) |
+| No Actions on this fork | Do not enable workflows (forks start this way) |
+
+To stop the Monday cron (and manual **Run workflow**, and push-to-`main` compiles): **Actions** → **Sync Gateway lists** → **⋯** → **Disable workflow**.
+
+```bash
+gh workflow disable "Sync Gateway lists"
+```
+
+A schedule `keepalive` job re-enables the workflow only when a scheduled run actually happens, so it will **not** turn the workflow back on after you disable it. Secrets and variables stay.
+
+To resume: **Actions** → **Sync Gateway lists** → **Enable workflow**.
+
+```bash
+gh workflow enable "Sync Gateway lists"
+```
 
 ## Commands
 
@@ -274,8 +312,14 @@ any(net.dst.ip in $<list_id>)
 
 <img width="1376" height="768" alt="Cloudflare_Zero_Trust_GitOps_-_Slide_11" src="https://github.com/user-attachments/assets/2c3aa835-8fb6-4f18-a5db-adb37765d13b" />
 
-This product includes GeoLite2 data created by MaxMind, available from [https://www.maxmind.com](https://www.maxmind.com).
-
 ## License
 
 [MIT](LICENSE) © mark1688288
+
+---
+
+<sup id="fn-oisd">1</sup> [OISD](https://oisd.nl/) ([Small](https://small.oisd.nl/)) — community DNS blocklist, mainly ads. By [sjhgvr](https://github.com/sjhgvr/oisd).
+
+<sup id="fn-hagezi">2</sup> [HaGeZi](https://github.com/hagezi/dns-blocklists) (Light) — DNS blocklist for ads, trackers, telemetry, and some malware. By [hagezi](https://github.com/hagezi).
+
+<sup id="fn-maxmind">3</sup> [MaxMind GeoLite2-ASN](https://dev.maxmind.com/geoip/docs/databases/asn/) — IP prefixes for each autonomous system. This product includes GeoLite2 data created by MaxMind, available from [https://www.maxmind.com](https://www.maxmind.com).
