@@ -55,7 +55,7 @@ export type RulePlan = {
 };
 
 /** Core security-risk categories (not content). IDs from Cloudflare Gateway. */
-export const SECURITY_CATEGORY_IDS = [68, 80, 83, 131, 151, 187, 191] as const;
+export const SECURITY_CATEGORY_IDS = [80, 83, 131, 151, 187, 191] as const;
 
 export const MAX_TRAFFIC_CHARS = 4096;
 

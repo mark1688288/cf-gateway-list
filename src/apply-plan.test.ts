@@ -9,6 +9,7 @@ import {
   listTraffic,
   planIsNoop,
   planListUpdates,
+  securityTraffic,
 } from "./apply-plan.ts";
 import type { Config, DesiredSnapshot } from "./types.ts";
 
@@ -149,7 +150,7 @@ test("planIsNoop when live already matches desired", () => {
         precedence: 2000,
         action: "block",
         enabled: true,
-        traffic: "any(dns.security_category[*] in {68 80 83 131 151 187 191})",
+        traffic: securityTraffic(),
       },
       {
         id: "R2",
