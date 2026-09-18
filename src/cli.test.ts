@@ -12,10 +12,12 @@ const cli = resolve(repoRoot, "src/cli.ts");
 function runCli(
   args: string[],
   cwd = repoRoot,
+  env?: NodeJS.ProcessEnv,
 ): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, [cli, ...args], {
     cwd,
     encoding: "utf8",
+    env: env ? { ...process.env, ...env } : process.env,
   });
   return {
     status: result.status,
@@ -79,13 +81,16 @@ policies:
 `,
     "utf8",
   );
-  const result = runCli(["compile", "--config", abs], tmpdir());
+  const snapshotsDir = join(dir, "snapshots");
+  const result = runCli(["compile", "--config", abs], tmpdir(), {
+    GATEWAY_LIST_SNAPSHOTS: snapshotsDir,
+  });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /wrote:\s+snapshots\/desired\.json/);
   assert.doesNotMatch(result.stderr, /ENOENT/);
 
   const desired = JSON.parse(
-    readFileSync(resolve(repoRoot, "snapshots/desired.json"), "utf8"),
+    readFileSync(join(snapshotsDir, "desired.json"), "utf8"),
   ) as {
     version: number;
     phase: number;

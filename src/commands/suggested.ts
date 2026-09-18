@@ -15,7 +15,7 @@ import {
   writeSuggestedSnapshot,
 } from "../gateway-logs.ts";
 import { domainValues, readLocalList } from "../list-file.ts";
-import { resolveFromRepo } from "../paths.ts";
+import { defaultSnapshotsDir, resolveFromRepo } from "../paths.ts";
 
 export type SuggestedOptions = {
   configPath: string;
@@ -49,7 +49,7 @@ async function domainsFromPathSources(
 
 export async function suggestedCommand(options: SuggestedOptions): Promise<number> {
   const config = await loadConfig(options.configPath);
-  const snapshotsDir = options.snapshotsDir ?? resolveFromRepo("snapshots");
+  const snapshotsDir = options.snapshotsDir ?? defaultSnapshotsDir();
   const suggestedPath = options.suggestedPath ?? resolveFromRepo("allowlist/suggested.txt");
   const generatedAt = (options.now ?? new Date()).toISOString();
 

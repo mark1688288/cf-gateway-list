@@ -150,6 +150,9 @@ function assertPrecedenceOrder(
   }
 }
 
+/** Offset from the DNS pack. Gateway rule precedence is unique across DNS and Network. */
+export const NETWORK_PRECEDENCE_OFFSET = 100;
+
 export function defaultNetworkPolicies(
   prefix: string,
   dns: {
@@ -160,9 +163,13 @@ export function defaultNetworkPolicies(
 ): Config["policies"]["network"] {
   return {
     enabled: false,
-    allow: { name: `${prefix}:net:allow`, precedence: dns.allow.precedence },
-    security: { name: `${prefix}:net:security`, precedence: dns.security.precedence },
-    block: { name: `${prefix}:net:block`, precedence: dns.block.precedence },
+    allow: { name: `${prefix}:net:allow`, precedence: dns.allow.precedence + NETWORK_PRECEDENCE_OFFSET },
+    security: {
+      name: `${prefix}:net:security`,
+      precedence: dns.security.precedence + NETWORK_PRECEDENCE_OFFSET,
+      enabled: true,
+    },
+    block: { name: `${prefix}:net:block`, precedence: dns.block.precedence + NETWORK_PRECEDENCE_OFFSET },
   };
 }
 
@@ -182,6 +189,20 @@ function parseNamedPolicy(
   };
 }
 
+function parseTogglePolicy(
+  value: unknown,
+  path: string,
+  fallback: { name: string; precedence: number; enabled: boolean },
+): { name: string; precedence: number; enabled: boolean } {
+  const named = parseNamedPolicy(value, path, fallback);
+  if (value === undefined) return { ...named, enabled: fallback.enabled };
+  const row = expectRecord(value, path);
+  return {
+    ...named,
+    enabled: expectBoolean(row.enabled, `${path}.enabled`, fallback.enabled),
+  };
+}
+
 function assertNetworkPolicies(config: Config): void {
   const prefix = config.plan.listNamePrefix;
   const network = config.policies.network;
@@ -197,23 +218,40 @@ function assertNetworkPolicies(config: Config): void {
     config.policies.security.name,
     config.policies.block.name,
   ]);
-  const named: Array<[string, string]> = [
-    ["policies.network.allow.name", network.allow.name],
-    ["policies.network.security.name", network.security.name],
-    ["policies.network.block.name", network.block.name],
+  const dnsPrecedence = new Map<number, string>([
+    [config.policies.allow.precedence, "policies.allow.precedence"],
+    [config.policies.security.precedence, "policies.security.precedence"],
+    [config.policies.block.precedence, "policies.block.precedence"],
+  ]);
+  const named: Array<[string, string, number]> = [
+    ["policies.network.allow", network.allow.name, network.allow.precedence],
+    ["policies.network.security", network.security.name, network.security.precedence],
+    ["policies.network.block", network.block.name, network.block.precedence],
   ];
   const seen = new Set<string>();
-  for (const [path, name] of named) {
+  const seenPrec = new Set<number>();
+  for (const [path, name, precedence] of named) {
     if (!name.startsWith(prefix)) {
-      fail(path, `name must start with "${prefix}"`);
+      fail(`${path}.name`, `name must start with "${prefix}"`);
     }
     if (dnsNames.has(name)) {
-      fail(path, `clashes with a DNS policy name`);
+      fail(`${path}.name`, `clashes with a DNS policy name`);
     }
     if (seen.has(name)) {
-      fail(path, `duplicate network policy name "${name}"`);
+      fail(`${path}.name`, `duplicate network policy name "${name}"`);
     }
     seen.add(name);
+    const clash = dnsPrecedence.get(precedence);
+    if (clash) {
+      fail(
+        `${path}.precedence`,
+        `clashes with ${clash} (Gateway rule precedence is unique across DNS and Network)`,
+      );
+    }
+    if (seenPrec.has(precedence)) {
+      fail(`${path}.precedence`, `duplicate network policy precedence ${precedence}`);
+    }
+    seenPrec.add(precedence);
   }
 }
 
@@ -305,7 +343,7 @@ export function parseConfig(raw: unknown, fileLabel = "config.yaml"): Config {
             "policies.network.allow",
             networkDefaults.allow,
           ),
-          security: parseNamedPolicy(
+          security: parseTogglePolicy(
             networkPolicy?.security,
             "policies.network.security",
             networkDefaults.security,

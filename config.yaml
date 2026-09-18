@@ -60,5 +60,16 @@ policies:
     name: gateway-list:block
     precedence: 3000
   # Network (l4) pack on the same DOMAIN lists. No-op without WARP + Gateway TCP proxy.
+  # Precedence is unique across DNS and Network (not per tab).
   network:
     enabled: false
+    allow:
+      name: gateway-list:net:allow
+      precedence: 1100
+    security:
+      name: gateway-list:net:security
+      precedence: 2100
+      enabled: true
+    block:
+      name: gateway-list:net:block
+      precedence: 3100

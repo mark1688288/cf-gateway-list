@@ -99,7 +99,13 @@ function createFakeGateway(): { fetch: typeof fetch; writes: string[]; lists: Fa
         result_info: { page: 1, per_page: 1000, total_count: rules.length },
       });
     }
+    const precedenceTaken = (precedence: number, exceptId?: string): boolean =>
+      rules.some((row) => row.precedence === precedence && row.id !== exceptId);
+    const precedenceConflict = () =>
+      json({ success: false, errors: [{ message: "A rule with this precedence already exists." }] }, 409);
+
     if (method === "POST" && path === "/gateway/rules") {
+      if (precedenceTaken(body.precedence)) return precedenceConflict();
       const created: FakeRule = {
         id: `R${seq++}`,
         name: body.name,
@@ -114,6 +120,7 @@ function createFakeGateway(): { fetch: typeof fetch; writes: string[]; lists: Fa
     }
     const oneRule = /^\/gateway\/rules\/([^/]+)$/.exec(path);
     if (method === "PUT" && oneRule) {
+      if (precedenceTaken(body.precedence, oneRule[1])) return precedenceConflict();
       const rule = rules.find((row) => row.id === oneRule[1]);
       if (rule) {
         rule.name = body.name;
@@ -438,9 +445,13 @@ test("apply with network.enabled upserts l4 rules on the same list IDs", async (
   const netBlock = fake.rules.find((rule) => rule.name === "gateway-list:net:block");
   const netSecurity = fake.rules.find((rule) => rule.name === "gateway-list:net:security");
   assert.deepEqual(dnsAllow?.filters, ["dns"]);
+  assert.equal(dnsAllow?.precedence, 1000);
   assert.deepEqual(netAllow?.filters, ["l4"]);
+  assert.equal(netAllow?.precedence, 1100);
   assert.deepEqual(netBlock?.filters, ["l4"]);
+  assert.equal(netBlock?.precedence, 3100);
   assert.deepEqual(netSecurity?.filters, ["l4"]);
+  assert.equal(netSecurity?.precedence, 2100);
   assert.match(netAllow?.traffic ?? "", /net\.sni\.domains/);
   assert.match(netAllow?.traffic ?? "", /net\.sni\.host/);
   assert.match(netBlock?.traffic ?? "", /net\.sni\.host/);
@@ -462,7 +473,7 @@ test("apply disables leftover network rules when the pack is off", async () => {
   fake.rules.push({
     id: "N0",
     name: "gateway-list:net:block",
-    precedence: 3000,
+    precedence: 3100,
     action: "block",
     enabled: true,
     traffic: "any(net.sni.domains[*] in $B0) or net.sni.host in $B0",
@@ -480,6 +491,7 @@ test("apply disables leftover network rules when the pack is off", async () => {
   );
   const leftover = fake.rules.find((rule) => rule.id === "N0");
   assert.equal(leftover?.enabled, false);
+  assert.equal(leftover?.precedence, 3100);
   assert.deepEqual(leftover?.filters, ["l4"]);
   assert.equal(
     fake.rules.some((rule) => rule.name === "gateway-list:net:allow" && rule.enabled !== false),

@@ -22,7 +22,7 @@ import { createGatewayList, patchGatewayList, upsertGatewayRule } from "../cf-wr
 import { loadConfig } from "../config.ts";
 import { isAllowListName, isBlockListName, liveDomains } from "../domain-diff.ts";
 import { CredentialsError, loadCloudflareCredentials } from "../env.ts";
-import { resolveFromRepo } from "../paths.ts";
+import { defaultSnapshotsDir } from "../paths.ts";
 import { loadDesiredSnapshot, SnapshotError } from "../snapshot.ts";
 import { DESIRED_SNAPSHOT_VERSION, type LastAppliedSnapshot } from "../types.ts";
 
@@ -85,7 +85,7 @@ function printPlan(plan: ApplyPlan, dryRun: boolean): void {
 export async function applyCommand(options: ApplyOptions): Promise<number> {
   try {
     const config = await loadConfig(options.configPath);
-    const snapshotsDir = options.snapshotsDir ?? resolveFromRepo("snapshots");
+    const snapshotsDir = options.snapshotsDir ?? defaultSnapshotsDir();
     const desired = await loadDesiredSnapshot(snapshotsDir);
     const creds = await loadCloudflareCredentials({
       env: options.env,

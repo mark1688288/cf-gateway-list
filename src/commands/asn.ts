@@ -36,7 +36,7 @@ import { createAsnGatewayList, patchAsnGatewayList } from "../cf-write.ts";
 import { loadConfig } from "../config.ts";
 import { CredentialsError, loadCloudflareCredentials } from "../env.ts";
 import { MmdbError } from "../mmdb.ts";
-import { resolveFromRepo } from "../paths.ts";
+import { defaultSnapshotsDir, resolveFromRepo } from "../paths.ts";
 
 export const ASN_USAGE = `usage: asn add <ASNNNN> | asn update <ASNNNN> | asn update --dashboard [--dry-run]
   Creates or refreshes a Gateway IP reusable list from GeoLite2-ASN.
@@ -166,7 +166,7 @@ async function applyPlan(client: CfClient, plan: AsnPlan): Promise<void> {
 
 async function loadAsnContext(options: AsnCommandOptions): Promise<AsnContext> {
   const config = await loadConfig(options.configPath);
-  const snapshotsDir = options.snapshotsDir ?? resolveFromRepo("snapshots");
+  const snapshotsDir = options.snapshotsDir ?? defaultSnapshotsDir();
   const creds = await loadCloudflareCredentials({
     env: options.env,
     envPath: options.envPath,

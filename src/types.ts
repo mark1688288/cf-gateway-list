@@ -35,7 +35,7 @@ export type Config = {
     network: {
       enabled: boolean;
       allow: { name: string; precedence: number };
-      security: { name: string; precedence: number };
+      security: { name: string; precedence: number; enabled: boolean };
       block: { name: string; precedence: number };
     };
   };

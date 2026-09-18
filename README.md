@@ -180,7 +180,15 @@ Only lists and rules whose names start with `gateway-list` are managed. Dashboar
 
 Each list holds at most `items_per_list` items (default 1000). If the traffic filter exceeds 4096 characters it is split into `gateway-list:block-1` and so on. An empty allow set disables the Allow rule instead of attaching it to an empty list.
 
-Set `policies.network.enabled: true` to also upsert a Network (Layer 4) pack on the **same** DOMAIN lists. No extra list slots. Traffic is `any(net.sni.domains[*] in $LIST) or net.sni.host in $LIST`. Names default to `gateway-list:net:allow`, `gateway-list:net:security`, and `gateway-list:net:block`, with the same 1000 / 2000 / 3000 precedence inside the Network builder.
+Set `policies.network.enabled: true` to also upsert a Network (Layer 4) pack on the **same** DOMAIN lists. No extra list slots. Traffic is `any(net.sni.domains[*] in $LIST) or net.sni.host in $LIST`. Allow / Security / Block names, precedence, and `security.enabled` are set in `config.yaml` the same way as the DNS pack. Defaults:
+
+| Precedence | Name | Action |
+| ---: | --- | --- |
+| 1100 | `gateway-list:net:allow` | Allow |
+| 2100 | `gateway-list:net:security` | Block |
+| 3100 | `gateway-list:net:block` | Block |
+
+Gateway requires unique precedence across **all** rules, not per DNS/Network tab, so these must not reuse 1000 / 2000 / 3000.
 
 > [!CAUTION]
 > That pack only takes effect when devices use the Cloudflare One Client in Gateway with WARP (or Traffic and DNS) and Zero Trust → Traffic settings has **Allow Secure Web Gateway to proxy traffic** → **TCP**. SNI selectors default to HTTPS on port 443. Encrypted Client Hello and connections with no SNI are not matched. DNS-only / Gateway with DoH is not enough. TLS decryption is not required.
