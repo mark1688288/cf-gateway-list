@@ -182,7 +182,8 @@ Each list holds at most `items_per_list` items (default 1000). If the traffic fi
 
 Set `policies.network.enabled: true` to also upsert a Network (Layer 4) pack on the **same** DOMAIN lists. No extra list slots. Traffic is `any(net.sni.domains[*] in $LIST) or net.sni.host in $LIST`. Names default to `gateway-list:net:allow`, `gateway-list:net:security`, and `gateway-list:net:block`, with the same 1000 / 2000 / 3000 precedence inside the Network builder.
 
-That pack only takes effect when devices use the Cloudflare One Client in Gateway with WARP (or Traffic and DNS) and Zero Trust → Traffic settings has **Allow Secure Web Gateway to proxy traffic** → **TCP**. SNI selectors default to HTTPS on port 443. Encrypted Client Hello and connections with no SNI are not matched. DNS-only / Gateway with DoH is not enough. TLS decryption is not required.
+> [!CAUTION]
+> That pack only takes effect when devices use the Cloudflare One Client in Gateway with WARP (or Traffic and DNS) and Zero Trust → Traffic settings has **Allow Secure Web Gateway to proxy traffic** → **TCP**. SNI selectors default to HTTPS on port 443. Encrypted Client Hello and connections with no SNI are not matched. DNS-only / Gateway with DoH is not enough. TLS decryption is not required.
 
 ## Review
 
