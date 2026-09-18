@@ -138,15 +138,82 @@ function assertUniqueSourceIds(config: Config): void {
   }
 }
 
-function assertPrecedenceOrder(config: Config): void {
-  const allow = config.policies.allow.precedence;
-  const security = config.policies.security.precedence;
-  const block = config.policies.block.precedence;
+function assertPrecedenceOrder(
+  allow: number,
+  security: number,
+  block: number,
+  path: string,
+  message: string,
+): void {
   if (!(allow < security && security < block)) {
-    fail(
-      "policies",
-      "expected policies.allow.precedence < policies.security.precedence < policies.block.precedence",
-    );
+    fail(path, message);
+  }
+}
+
+export function defaultNetworkPolicies(
+  prefix: string,
+  dns: {
+    allow: { precedence: number };
+    security: { precedence: number };
+    block: { precedence: number };
+  },
+): Config["policies"]["network"] {
+  return {
+    enabled: false,
+    allow: { name: `${prefix}:net:allow`, precedence: dns.allow.precedence },
+    security: { name: `${prefix}:net:security`, precedence: dns.security.precedence },
+    block: { name: `${prefix}:net:block`, precedence: dns.block.precedence },
+  };
+}
+
+function parseNamedPolicy(
+  value: unknown,
+  path: string,
+  fallback: { name: string; precedence: number },
+): { name: string; precedence: number } {
+  if (value === undefined) return fallback;
+  const row = expectRecord(value, path);
+  return {
+    name: row.name === undefined ? fallback.name : expectString(row.name, `${path}.name`),
+    precedence:
+      row.precedence === undefined
+        ? fallback.precedence
+        : expectInteger(row.precedence, `${path}.precedence`, { min: 0 }),
+  };
+}
+
+function assertNetworkPolicies(config: Config): void {
+  const prefix = config.plan.listNamePrefix;
+  const network = config.policies.network;
+  assertPrecedenceOrder(
+    network.allow.precedence,
+    network.security.precedence,
+    network.block.precedence,
+    "policies.network",
+    "expected policies.network.allow.precedence < policies.network.security.precedence < policies.network.block.precedence",
+  );
+  const dnsNames = new Set([
+    config.policies.allow.name,
+    config.policies.security.name,
+    config.policies.block.name,
+  ]);
+  const named: Array<[string, string]> = [
+    ["policies.network.allow.name", network.allow.name],
+    ["policies.network.security.name", network.security.name],
+    ["policies.network.block.name", network.block.name],
+  ];
+  const seen = new Set<string>();
+  for (const [path, name] of named) {
+    if (!name.startsWith(prefix)) {
+      fail(path, `name must start with "${prefix}"`);
+    }
+    if (dnsNames.has(name)) {
+      fail(path, `clashes with a DNS policy name`);
+    }
+    if (seen.has(name)) {
+      fail(path, `duplicate network policy name "${name}"`);
+    }
+    seen.add(name);
   }
 }
 
@@ -162,7 +229,34 @@ export function parseConfig(raw: unknown, fileLabel = "config.yaml"): Config {
     const allowPolicy = expectRecord(policies.allow, "policies.allow");
     const securityPolicy = expectRecord(policies.security, "policies.security");
     const blockPolicy = expectRecord(policies.block, "policies.block");
+    const networkPolicy =
+      policies.network === undefined
+        ? undefined
+        : expectRecord(policies.network, "policies.network");
 
+    const listNamePrefix = expectString(plan.list_name_prefix, "plan.list_name_prefix");
+    const dnsPolicies = {
+      allow: {
+        name: expectString(allowPolicy.name, "policies.allow.name"),
+        precedence: expectInteger(allowPolicy.precedence, "policies.allow.precedence", {
+          min: 0,
+        }),
+      },
+      security: {
+        name: expectString(securityPolicy.name, "policies.security.name"),
+        precedence: expectInteger(securityPolicy.precedence, "policies.security.precedence", {
+          min: 0,
+        }),
+        enabled: expectBoolean(securityPolicy.enabled, "policies.security.enabled", true),
+      },
+      block: {
+        name: expectString(blockPolicy.name, "policies.block.name"),
+        precedence: expectInteger(blockPolicy.precedence, "policies.block.precedence", {
+          min: 0,
+        }),
+      },
+    };
+    const networkDefaults = defaultNetworkPolicies(listNamePrefix, dnsPolicies);
     const config: Config = {
       plan: {
         maxItems: expectInteger(plan.max_items, "plan.max_items", { min: 1 }),
@@ -170,7 +264,7 @@ export function parseConfig(raw: unknown, fileLabel = "config.yaml"): Config {
           min: 1,
           max: 5000,
         }),
-        listNamePrefix: expectString(plan.list_name_prefix, "plan.list_name_prefix"),
+        listNamePrefix,
         ...(plan.max_lists === undefined
           ? {}
           : {
@@ -203,31 +297,36 @@ export function parseConfig(raw: unknown, fileLabel = "config.yaml"): Config {
         ),
       },
       policies: {
-        allow: {
-          name: expectString(allowPolicy.name, "policies.allow.name"),
-          precedence: expectInteger(allowPolicy.precedence, "policies.allow.precedence", {
-            min: 0,
-          }),
-        },
-        security: {
-          name: expectString(securityPolicy.name, "policies.security.name"),
-          precedence: expectInteger(
-            securityPolicy.precedence,
-            "policies.security.precedence",
-            { min: 0 },
+        ...dnsPolicies,
+        network: {
+          enabled: expectBoolean(networkPolicy?.enabled, "policies.network.enabled", false),
+          allow: parseNamedPolicy(
+            networkPolicy?.allow,
+            "policies.network.allow",
+            networkDefaults.allow,
           ),
-          enabled: expectBoolean(securityPolicy.enabled, "policies.security.enabled", true),
-        },
-        block: {
-          name: expectString(blockPolicy.name, "policies.block.name"),
-          precedence: expectInteger(blockPolicy.precedence, "policies.block.precedence", {
-            min: 0,
-          }),
+          security: parseNamedPolicy(
+            networkPolicy?.security,
+            "policies.network.security",
+            networkDefaults.security,
+          ),
+          block: parseNamedPolicy(
+            networkPolicy?.block,
+            "policies.network.block",
+            networkDefaults.block,
+          ),
         },
       },
     };
     assertUniqueSourceIds(config);
-    assertPrecedenceOrder(config);
+    assertPrecedenceOrder(
+      config.policies.allow.precedence,
+      config.policies.security.precedence,
+      config.policies.block.precedence,
+      "policies",
+      "expected policies.allow.precedence < policies.security.precedence < policies.block.precedence",
+    );
+    assertNetworkPolicies(config);
     return config;
   } finally {
     errorFileLabel = previousLabel;

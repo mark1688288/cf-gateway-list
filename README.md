@@ -120,13 +120,13 @@ A failed cache write does not fail compile; the next run falls back to a full GE
 
 ### Fold
 
-After block sources are merged, child domains are folded. Gateway Allow / Block rules use:
+After block sources are merged, child domains are folded. Gateway DNS Allow / Block rules use:
 
 ```
 any(dns.domains[*] in $LIST) or dns.fqdn in $LIST
 ```
 
-`dns.domains` is the suffix chain, so `tracker.example.com` in the list already covers `ads.tracker.example.com`. Keeping the child would waste a slot.
+The optional Network pack uses the same lists with the SNI equivalent (`net.sni.domains` / `net.sni.host`). `dns.domains` / `net.sni.domains` are the suffix chain, so `tracker.example.com` in the list already covers `ads.tracker.example.com`. Keeping the child would waste a slot.
 
 - Only **block** is folded. Allow stays as written.
 - Folding stops at the public suffix (nothing is folded into `co.uk` or `github.io`).
@@ -170,7 +170,7 @@ Only lists and rules whose names start with `gateway-list` are managed. Dashboar
 
 ## Policy pack
 
-`apply` upserts these three (names and precedence come from `config.yaml`):
+`apply` upserts these three DNS policies (names and precedence come from `config.yaml`):
 
 | Precedence | Name | Action | Contents |
 | ---: | --- | --- | --- |
@@ -179,6 +179,10 @@ Only lists and rules whose names start with `gateway-list` are managed. Dashboar
 | 3000 | `gateway-list:block` | Block | compiled block chunks |
 
 Each list holds at most `items_per_list` items (default 1000). If the traffic filter exceeds 4096 characters it is split into `gateway-list:block-1` and so on. An empty allow set disables the Allow rule instead of attaching it to an empty list.
+
+Set `policies.network.enabled: true` to also upsert a Network (Layer 4) pack on the **same** DOMAIN lists. No extra list slots. Traffic is `any(net.sni.domains[*] in $LIST) or net.sni.host in $LIST`. Names default to `gateway-list:net:allow`, `gateway-list:net:security`, and `gateway-list:net:block`, with the same 1000 / 2000 / 3000 precedence inside the Network builder.
+
+That pack only takes effect when devices use the Cloudflare One Client in Gateway with WARP (or Traffic and DNS) and Zero Trust → Traffic settings has **Allow Secure Web Gateway to proxy traffic** → **TCP**. SNI selectors default to HTTPS on port 443. Encrypted Client Hello and connections with no SNI are not matched. DNS-only / Gateway with DoH is not enough. TLS decryption is not required.
 
 ## Review
 
