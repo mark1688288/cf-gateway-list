@@ -17,6 +17,7 @@ type FakeRule = {
   action: string;
   enabled: boolean;
   traffic: string;
+  filters?: string[];
 };
 
 function json(body: unknown, status = 200): Response {
@@ -106,6 +107,7 @@ function createFakeGateway(): { fetch: typeof fetch; writes: string[]; lists: Fa
         action: body.action,
         enabled: body.enabled !== false,
         traffic: body.traffic,
+        filters: body.filters,
       };
       rules.push(created);
       return json({ success: true, result: created });
@@ -119,6 +121,7 @@ function createFakeGateway(): { fetch: typeof fetch; writes: string[]; lists: Fa
         rule.action = body.action;
         rule.enabled = body.enabled !== false;
         rule.traffic = body.traffic;
+        rule.filters = body.filters ?? rule.filters;
       }
       return json({ success: true, result: rule ?? body });
     }
@@ -145,7 +148,7 @@ function desiredOf(allow: string[], block: string[]): DesiredSnapshot {
 
 async function setup(
   desired: DesiredSnapshot,
-  extras: { itemsPerList?: number; maxItems?: number; maxLists?: number } = {},
+  extras: { itemsPerList?: number; maxItems?: number; maxLists?: number; networkEnabled?: boolean } = {},
 ): Promise<{ dir: string; configPath: string }> {
   const itemsPerList = extras.itemsPerList ?? 2;
   const dir = await mkdtemp(join(tmpdir(), "gateway-list-apply-"));
@@ -192,6 +195,8 @@ policies:
   block:
     name: gateway-list:block
     precedence: 3000
+  network:
+    enabled: ${extras.networkEnabled === true}
 `,
     "utf8",
   );
@@ -410,4 +415,74 @@ test("apply refuses when list slots would exceed max_lists", async () => {
   }
   assert.match(errors.join("\n"), /exceeds max_lists 2/);
   assert.deepEqual(fake.writes, []);
+});
+
+test("apply with network.enabled upserts l4 rules on the same list IDs", async () => {
+  const { dir, configPath } = await setup(
+    desiredOf(["maps.google.com"], ["ads.example.com"]),
+    { networkEnabled: true },
+  );
+  const fake = createFakeGateway();
+  assert.equal(
+    await applyCommand({
+      configPath,
+      snapshotsDir: join(dir, "snapshots"),
+      dryRun: false,
+      fetch: fake.fetch,
+      ...creds,
+    }),
+    0,
+  );
+  const dnsAllow = fake.rules.find((rule) => rule.name === "gateway-list:allow");
+  const netAllow = fake.rules.find((rule) => rule.name === "gateway-list:net:allow");
+  const netBlock = fake.rules.find((rule) => rule.name === "gateway-list:net:block");
+  const netSecurity = fake.rules.find((rule) => rule.name === "gateway-list:net:security");
+  assert.deepEqual(dnsAllow?.filters, ["dns"]);
+  assert.deepEqual(netAllow?.filters, ["l4"]);
+  assert.deepEqual(netBlock?.filters, ["l4"]);
+  assert.deepEqual(netSecurity?.filters, ["l4"]);
+  assert.match(netAllow?.traffic ?? "", /net\.sni\.domains/);
+  assert.match(netAllow?.traffic ?? "", /net\.sni\.host/);
+  assert.match(netBlock?.traffic ?? "", /net\.sni\.host/);
+  assert.match(netSecurity?.traffic ?? "", /net\.fqdn\.security_category/);
+  const allowId = fake.lists.find((list) => list.name === "gateway-list:allow")?.id;
+  const blockId = fake.lists.find((list) => list.name === "gateway-list:block")?.id;
+  assert.ok(allowId);
+  assert.ok(blockId);
+  assert.match(netAllow?.traffic ?? "", new RegExp(`\\$${allowId}`));
+  assert.match(dnsAllow?.traffic ?? "", new RegExp(`\\$${allowId}`));
+  assert.match(netBlock?.traffic ?? "", new RegExp(`\\$${blockId}`));
+});
+
+test("apply disables leftover network rules when the pack is off", async () => {
+  const { dir, configPath } = await setup(desiredOf(["maps.google.com"], ["ads.example.com"]));
+  const fake = createFakeGateway();
+  fake.lists.push({ id: "A0", name: "gateway-list:allow", items: ["maps.google.com"] });
+  fake.lists.push({ id: "B0", name: "gateway-list:block", items: ["ads.example.com"] });
+  fake.rules.push({
+    id: "N0",
+    name: "gateway-list:net:block",
+    precedence: 3000,
+    action: "block",
+    enabled: true,
+    traffic: "any(net.sni.domains[*] in $B0) or net.sni.host in $B0",
+    filters: ["l4"],
+  });
+  assert.equal(
+    await applyCommand({
+      configPath,
+      snapshotsDir: join(dir, "snapshots"),
+      dryRun: false,
+      fetch: fake.fetch,
+      ...creds,
+    }),
+    0,
+  );
+  const leftover = fake.rules.find((rule) => rule.id === "N0");
+  assert.equal(leftover?.enabled, false);
+  assert.deepEqual(leftover?.filters, ["l4"]);
+  assert.equal(
+    fake.rules.some((rule) => rule.name === "gateway-list:net:allow" && rule.enabled !== false),
+    false,
+  );
 });

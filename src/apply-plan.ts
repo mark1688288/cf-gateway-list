@@ -23,6 +23,8 @@ export type LiveOwnedList = {
   items: string[];
 };
 
+export type RuleFilter = "dns" | "l4";
+
 export type LiveOwnedRule = {
   id: string;
   name: string;
@@ -30,6 +32,7 @@ export type LiveOwnedRule = {
   action?: string;
   enabled?: boolean;
   traffic?: string;
+  filters?: RuleFilter;
 };
 
 export type ListPatchPlan = {
@@ -50,6 +53,7 @@ export type RulePlan = {
   action: "allow" | "block";
   enabled: boolean;
   traffic: string;
+  filters: RuleFilter;
   existingId?: string;
   unchanged: boolean;
 };
@@ -73,9 +77,17 @@ export type ApplyPlan = {
   blockLive: string[];
 };
 
+export type TrafficBuilder = (listIds: string[]) => string;
+
 export function listTraffic(listIds: string[]): string {
   return listIds
     .map((id) => `any(dns.domains[*] in $${id}) or dns.fqdn in $${id}`)
+    .join(" or ");
+}
+
+export function listSniTraffic(listIds: string[]): string {
+  return listIds
+    .map((id) => `any(net.sni.domains[*] in $${id}) or net.sni.host in $${id}`)
     .join(" or ");
 }
 
@@ -83,11 +95,19 @@ export function securityTraffic(): string {
   return `any(dns.security_category[*] in {${SECURITY_CATEGORY_IDS.join(" ")}})`;
 }
 
-export function chunkListIdsByTraffic(listIds: string[], maxChars = MAX_TRAFFIC_CHARS): string[][] {
+export function securitySniTraffic(): string {
+  return `any(net.fqdn.security_category[*] in {${SECURITY_CATEGORY_IDS.join(" ")}})`;
+}
+
+export function chunkListIdsByTraffic(
+  listIds: string[],
+  maxChars = MAX_TRAFFIC_CHARS,
+  traffic: TrafficBuilder = listTraffic,
+): string[][] {
   const chunks: string[][] = [];
   let current: string[] = [];
   for (const id of listIds) {
-    const trial = listTraffic([...current, id]);
+    const trial = traffic([...current, id]);
     if (current.length > 0 && trial.length > maxChars) {
       chunks.push(current);
       current = [id];
@@ -181,6 +201,47 @@ function plannedNonEmptyNames(
   return out.filter((row) => row.count > 0);
 }
 
+type PolicyLayer = {
+  filters: RuleFilter;
+  allowName: string;
+  allowPrecedence: number;
+  securityName: string;
+  securityPrecedence: number;
+  securityEnabled: boolean;
+  blockName: string;
+  blockPrecedence: number;
+  listTraffic: TrafficBuilder;
+  securityTraffic: () => string;
+  disabledTraffic: string;
+};
+
+function existingFilter(rule: LiveOwnedRule | undefined): RuleFilter {
+  return rule?.filters ?? "dns";
+}
+
+function ruleUnchanged(
+  existing: LiveOwnedRule | undefined,
+  options: {
+    action: "allow" | "block";
+    precedence: number;
+    filters: RuleFilter;
+    traffic: string;
+    enabled: boolean;
+  },
+): boolean {
+  if (!existing) return false;
+  if (options.enabled) {
+    return Boolean(
+      existing.enabled !== false &&
+        existing.action === options.action &&
+        existing.precedence === options.precedence &&
+        existingFilter(existing) === options.filters &&
+        normalizeTraffic(existing.traffic ?? "") === normalizeTraffic(options.traffic),
+    );
+  }
+  return existing.enabled === false;
+}
+
 export function planRules(options: {
   config: Config;
   allowLists: { name: string; id?: string; count: number }[];
@@ -193,18 +254,54 @@ export function planRules(options: {
   const usedNames = new Set<string>();
   const rules: RulePlan[] = [];
 
+  const layers: PolicyLayer[] = [
+    {
+      filters: "dns",
+      allowName: config.policies.allow.name,
+      allowPrecedence: config.policies.allow.precedence,
+      securityName: config.policies.security.name,
+      securityPrecedence: config.policies.security.precedence,
+      securityEnabled: config.policies.security.enabled,
+      blockName: config.policies.block.name,
+      blockPrecedence: config.policies.block.precedence,
+      listTraffic,
+      securityTraffic,
+      disabledTraffic: 'dns.fqdn == "__gateway-list-disabled.invalid"',
+    },
+  ];
+  if (config.policies.network.enabled) {
+    layers.push({
+      filters: "l4",
+      allowName: config.policies.network.allow.name,
+      allowPrecedence: config.policies.network.allow.precedence,
+      securityName: config.policies.network.security.name,
+      securityPrecedence: config.policies.network.security.precedence,
+      securityEnabled: config.policies.security.enabled,
+      blockName: config.policies.network.block.name,
+      blockPrecedence: config.policies.network.block.precedence,
+      listTraffic: listSniTraffic,
+      securityTraffic: securitySniTraffic,
+      disabledTraffic: 'net.sni.host == "__gateway-list-disabled.invalid"',
+    });
+  }
+
   const pushListRules = (
     lists: { name: string; id?: string; count: number }[],
     baseName: string,
     basePrecedence: number,
     action: "allow" | "block",
+    layer: PolicyLayer,
   ): void => {
     const usable = lists.filter((list) => list.count > 0 && list.id);
-    const chunks = chunkListIdsByTraffic(usable.map((list) => list.id as string));
+    const chunks = chunkListIdsByTraffic(
+      usable.map((list) => list.id as string),
+      MAX_TRAFFIC_CHARS,
+      layer.listTraffic,
+    );
     chunks.forEach((ids, index) => {
       const name = index === 0 ? baseName : `${baseName}-${index}`;
       const precedence = basePrecedence + index;
-      const traffic = listTraffic(ids);
+      const traffic = layer.listTraffic(ids);
       const existing = byName.get(name);
       usedNames.add(name);
       rules.push({
@@ -213,72 +310,87 @@ export function planRules(options: {
         action,
         enabled: true,
         traffic,
+        filters: layer.filters,
         existingId: existing?.id,
-        unchanged: Boolean(
-          existing &&
-            existing.enabled !== false &&
-            existing.action === action &&
-            existing.precedence === precedence &&
-            normalizeTraffic(existing.traffic ?? "") === normalizeTraffic(traffic),
-        ),
+        unchanged: ruleUnchanged(existing, {
+          action,
+          precedence,
+          filters: layer.filters,
+          traffic,
+          enabled: true,
+        }),
       });
     });
   };
 
   const allowNonEmpty = options.allowLists.filter((list) => list.count > 0);
-  if (allowNonEmpty.some((list) => list.id)) {
-    pushListRules(
-      options.allowLists,
-      config.policies.allow.name,
-      config.policies.allow.precedence,
-      "allow",
-    );
-  } else if (allowNonEmpty.length === 0) {
-    const existing = byName.get(config.policies.allow.name);
-    if (existing) {
-      usedNames.add(existing.name);
+  const blockNonEmpty = options.blockLists.filter((list) => list.count > 0 && list.id);
+
+  for (const layer of layers) {
+    if (allowNonEmpty.some((list) => list.id)) {
+      pushListRules(
+        options.allowLists,
+        layer.allowName,
+        layer.allowPrecedence,
+        "allow",
+        layer,
+      );
+    } else if (allowNonEmpty.length === 0) {
+      const existing = byName.get(layer.allowName);
+      if (existing) {
+        usedNames.add(existing.name);
+        const traffic = existing.traffic ?? layer.disabledTraffic;
+        rules.push({
+          name: existing.name,
+          precedence: layer.allowPrecedence,
+          action: "allow",
+          enabled: false,
+          traffic,
+          filters: layer.filters,
+          existingId: existing.id,
+          unchanged: ruleUnchanged(existing, {
+            action: "allow",
+            precedence: layer.allowPrecedence,
+            filters: layer.filters,
+            traffic,
+            enabled: false,
+          }),
+        });
+      }
+    }
+
+    if (layer.securityEnabled) {
+      const name = layer.securityName;
+      const traffic = layer.securityTraffic();
+      const existing = byName.get(name);
+      usedNames.add(name);
       rules.push({
-        name: existing.name,
-        precedence: config.policies.allow.precedence,
-        action: "allow",
-        enabled: false,
-        traffic: existing.traffic ?? "dns.fqdn == \"__gateway-list-disabled.invalid\"",
-        existingId: existing.id,
-        unchanged: existing.enabled === false,
+        name,
+        precedence: layer.securityPrecedence,
+        action: "block",
+        enabled: true,
+        traffic,
+        filters: layer.filters,
+        existingId: existing?.id,
+        unchanged: ruleUnchanged(existing, {
+          action: "block",
+          precedence: layer.securityPrecedence,
+          filters: layer.filters,
+          traffic,
+          enabled: true,
+        }),
       });
     }
-  }
 
-  if (config.policies.security.enabled) {
-    const name = config.policies.security.name;
-    const traffic = securityTraffic();
-    const existing = byName.get(name);
-    usedNames.add(name);
-    rules.push({
-      name,
-      precedence: config.policies.security.precedence,
-      action: "block",
-      enabled: true,
-      traffic,
-      existingId: existing?.id,
-      unchanged: Boolean(
-        existing &&
-          existing.enabled !== false &&
-          existing.action === "block" &&
-          existing.precedence === config.policies.security.precedence &&
-          normalizeTraffic(existing.traffic ?? "") === normalizeTraffic(traffic),
-      ),
-    });
-  }
-
-  const blockNonEmpty = options.blockLists.filter((list) => list.count > 0 && list.id);
-  if (blockNonEmpty.length > 0) {
-    pushListRules(
-      options.blockLists,
-      config.policies.block.name,
-      config.policies.block.precedence,
-      "block",
-    );
+    if (blockNonEmpty.length > 0) {
+      pushListRules(
+        options.blockLists,
+        layer.blockName,
+        layer.blockPrecedence,
+        "block",
+        layer,
+      );
+    }
   }
 
   const disableRules = existingRules

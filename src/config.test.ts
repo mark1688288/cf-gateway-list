@@ -100,6 +100,59 @@ test("valid fixture parses", () => {
   assert.equal(config.plan.maxLists, undefined);
   assert.equal(config.sources.allow[0]?.id, "personal");
   assert.equal(config.sources.block[1]?.format, "adblock");
+  assert.equal(config.policies.network.enabled, false);
+  assert.equal(config.policies.network.allow.name, "gateway-list:net:allow");
+  assert.equal(config.policies.network.security.name, "gateway-list:net:security");
+  assert.equal(config.policies.network.block.name, "gateway-list:net:block");
+  assert.equal(config.policies.network.allow.precedence, 1000);
+  assert.equal(config.policies.network.block.precedence, 3000);
+});
+
+test("policies.network.enabled and name overrides parse", () => {
+  const raw = cloneValid() as typeof validRaw & {
+    policies: typeof validRaw.policies & {
+      network?: {
+        enabled?: boolean;
+        allow?: { name?: string; precedence?: number };
+        block?: { name?: string; precedence?: number };
+      };
+    };
+  };
+  raw.policies.network = {
+    enabled: true,
+    allow: { name: "gateway-list:net:allow", precedence: 1100 },
+    block: { name: "gateway-list:sni-block", precedence: 3100 },
+  };
+  const config = parseConfig(raw);
+  assert.equal(config.policies.network.enabled, true);
+  assert.equal(config.policies.network.allow.precedence, 1100);
+  assert.equal(config.policies.network.block.name, "gateway-list:sni-block");
+  assert.equal(config.policies.network.security.name, "gateway-list:net:security");
+});
+
+test("network policy names must be unique, owned, and not clash with DNS", () => {
+  const clash = cloneValid() as typeof validRaw & {
+    policies: typeof validRaw.policies & { network?: { allow?: { name: string } } };
+  };
+  clash.policies.network = { allow: { name: "gateway-list:allow" } };
+  throwsPath(clash, /policies\.network\.allow\.name: clashes with a DNS policy name/);
+
+  const prefix = cloneValid() as typeof validRaw & {
+    policies: typeof validRaw.policies & { network?: { allow?: { name: string } } };
+  };
+  prefix.policies.network = { allow: { name: "other:net:allow" } };
+  throwsPath(prefix, /policies\.network\.allow\.name: name must start with "gateway-list"/);
+
+  const dup = cloneValid() as typeof validRaw & {
+    policies: typeof validRaw.policies & {
+      network?: { allow?: { name: string }; block?: { name: string } };
+    };
+  };
+  dup.policies.network = {
+    allow: { name: "gateway-list:net:shared" },
+    block: { name: "gateway-list:net:shared" },
+  };
+  throwsPath(dup, /policies\.network\.block\.name: duplicate network policy name "gateway-list:net:shared"/);
 });
 
 test("optional plan.max_lists parses and rejects 0", () => {
@@ -225,6 +278,15 @@ test("numeric range checks", () => {
         raw.policies.block.precedence = 1000;
       },
       path: /policies: expected policies\.allow\.precedence < policies\.security\.precedence < policies\.block\.precedence/,
+    },
+    {
+      mutate: (raw) => {
+        (raw.policies as { network?: { allow: { precedence: number }; block: { precedence: number } } }).network = {
+          allow: { precedence: 4000 },
+          block: { precedence: 3000 },
+        };
+      },
+      path: /policies\.network: expected policies\.network\.allow\.precedence < policies\.network\.security\.precedence < policies\.network\.block\.precedence/,
     },
   ];
 

@@ -5,12 +5,17 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { whyCommand } from "./commands/why.ts";
 import type { Config, DesiredSnapshot } from "./types.ts";
+import { defaultNetworkPolicies } from "./config.ts";
 import { renderWhy } from "./why.ts";
 
-const policies: Config["policies"] = {
+const dns = {
   allow: { name: "gateway-list:allow", precedence: 1000 },
   security: { name: "gateway-list:security", precedence: 2000, enabled: true },
   block: { name: "gateway-list:block", precedence: 3000 },
+};
+const policies: Config["policies"] = {
+  ...dns,
+  network: defaultNetworkPolicies("gateway-list", dns),
 };
 
 function snapshot(over: Partial<DesiredSnapshot> = {}): DesiredSnapshot {
@@ -88,6 +93,17 @@ test("why unknown domain falls back to security policy best effort", () => {
   });
   assert.match(text, /sources:        \(none\)/);
   assert.match(text, /policy:         gateway-list:security \(possible; categories not in snapshot\)/);
+  assert.doesNotMatch(text, /network-policy:/);
+});
+
+test("why names the matching network policy when enabled", () => {
+  const text = renderWhy({
+    query: "ads.google.com",
+    desired: snapshot(),
+    policies: { ...policies, network: { ...policies.network, enabled: true } },
+  });
+  assert.match(text, /policy:         gateway-list:block/);
+  assert.match(text, /network-policy: gateway-list:net:block/);
 });
 
 test("why command exits 1 without a snapshot", async () => {

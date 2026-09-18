@@ -32,6 +32,12 @@ export type Config = {
     allow: { name: string; precedence: number };
     security: { name: string; precedence: number; enabled: boolean };
     block: { name: string; precedence: number };
+    network: {
+      enabled: boolean;
+      allow: { name: string; precedence: number };
+      security: { name: string; precedence: number };
+      block: { name: string; precedence: number };
+    };
   };
 };
 

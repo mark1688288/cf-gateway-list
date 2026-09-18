@@ -6,14 +6,25 @@ import {
   buildApplyPlan,
   checkApplySafety,
   chunkListIdsByTraffic,
+  listSniTraffic,
   listTraffic,
   planIsNoop,
   planListUpdates,
+  securitySniTraffic,
   securityTraffic,
 } from "./apply-plan.ts";
+import { defaultNetworkPolicies } from "./config.ts";
 import type { Config, DesiredSnapshot } from "./types.ts";
 
-function config(over: Partial<Config["plan"]> = {}): Config {
+function config(
+  over: Partial<Config["plan"]> = {},
+  policyOver: Partial<Config["policies"]["network"]> = {},
+): Config {
+  const dns = {
+    allow: { name: "gateway-list:allow", precedence: 1000 },
+    security: { name: "gateway-list:security", precedence: 2000, enabled: true },
+    block: { name: "gateway-list:block", precedence: 3000 },
+  };
   return {
     plan: {
       maxItems: 300000,
@@ -29,9 +40,8 @@ function config(over: Partial<Config["plan"]> = {}): Config {
       requireReviewIfRemovesOver: 20,
     },
     policies: {
-      allow: { name: "gateway-list:allow", precedence: 1000 },
-      security: { name: "gateway-list:security", precedence: 2000, enabled: true },
-      block: { name: "gateway-list:block", precedence: 3000 },
+      ...dns,
+      network: { ...defaultNetworkPolicies("gateway-list", dns), ...policyOver },
     },
   };
 }
@@ -159,6 +169,138 @@ test("planIsNoop when live already matches desired", () => {
         action: "block",
         enabled: true,
         traffic: listTraffic(["B0"]),
+      },
+    ],
+  });
+  assert.equal(planIsNoop(plan), true);
+});
+
+test("listSniTraffic matches fold semantics", () => {
+  assert.equal(
+    listSniTraffic(["A0", "B0"]),
+    "any(net.sni.domains[*] in $A0) or net.sni.host in $A0 or any(net.sni.domains[*] in $B0) or net.sni.host in $B0",
+  );
+  assert.equal(
+    securitySniTraffic(),
+    "any(net.fqdn.security_category[*] in {80 83 131 151 187 191})",
+  );
+});
+
+test("chunkListIdsByTraffic splits SNI expressions before the budget", () => {
+  const ids = Array.from({ length: 80 }, (_, i) => `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`);
+  const chunks = chunkListIdsByTraffic(ids, MAX_TRAFFIC_CHARS, listSniTraffic);
+  assert.ok(chunks.length >= 2);
+  for (const chunk of chunks) {
+    assert.ok(listSniTraffic(chunk).length <= MAX_TRAFFIC_CHARS);
+  }
+});
+
+test("network pack is omitted when disabled and leftover net rules are disabled", () => {
+  const plan = buildApplyPlan({
+    config: config(),
+    desired: desiredOf(["maps.google.com"], ["ads.example.com"]),
+    allowLiveLists: [{ id: "A0", name: "gateway-list:allow", items: ["maps.google.com"] }],
+    blockLiveLists: [{ id: "B0", name: "gateway-list:block", items: ["ads.example.com"] }],
+    existingRules: [
+      {
+        id: "N0",
+        name: "gateway-list:net:block",
+        precedence: 3000,
+        action: "block",
+        enabled: true,
+        filters: "l4",
+        traffic: listSniTraffic(["B0"]),
+      },
+    ],
+  });
+  assert.equal(
+    plan.rules.some((rule) => rule.name.startsWith("gateway-list:net:")),
+    false,
+  );
+  assert.deepEqual(plan.disableRules, [{ id: "N0", name: "gateway-list:net:block" }]);
+});
+
+test("network pack reuses list IDs with l4 SNI traffic when enabled", () => {
+  const plan = buildApplyPlan({
+    config: config({}, { enabled: true }),
+    desired: desiredOf(["maps.google.com"], ["ads.example.com"]),
+    allowLiveLists: [{ id: "A0", name: "gateway-list:allow", items: ["maps.google.com"] }],
+    blockLiveLists: [{ id: "B0", name: "gateway-list:block", items: ["ads.example.com"] }],
+    existingRules: [],
+  });
+  const netAllow = plan.rules.find((rule) => rule.name === "gateway-list:net:allow");
+  const netBlock = plan.rules.find((rule) => rule.name === "gateway-list:net:block");
+  const netSecurity = plan.rules.find((rule) => rule.name === "gateway-list:net:security");
+  assert.equal(netAllow?.filters, "l4");
+  assert.equal(netAllow?.action, "allow");
+  assert.equal(netAllow?.traffic, listSniTraffic(["A0"]));
+  assert.equal(netBlock?.filters, "l4");
+  assert.equal(netBlock?.traffic, listSniTraffic(["B0"]));
+  assert.equal(netSecurity?.filters, "l4");
+  assert.equal(netSecurity?.traffic, securitySniTraffic());
+  assert.ok(plan.rules.some((rule) => rule.name === "gateway-list:allow" && rule.filters === "dns"));
+});
+
+test("planIsNoop when DNS and Network already match", () => {
+  const plan = buildApplyPlan({
+    config: config({}, { enabled: true }),
+    desired: desiredOf(["maps.google.com"], ["ads.example.com"]),
+    allowLiveLists: [{ id: "A0", name: "gateway-list:allow", items: ["maps.google.com"] }],
+    blockLiveLists: [{ id: "B0", name: "gateway-list:block", items: ["ads.example.com"] }],
+    existingRules: [
+      {
+        id: "R0",
+        name: "gateway-list:allow",
+        precedence: 1000,
+        action: "allow",
+        enabled: true,
+        filters: "dns",
+        traffic: listTraffic(["A0"]),
+      },
+      {
+        id: "R1",
+        name: "gateway-list:security",
+        precedence: 2000,
+        action: "block",
+        enabled: true,
+        filters: "dns",
+        traffic: securityTraffic(),
+      },
+      {
+        id: "R2",
+        name: "gateway-list:block",
+        precedence: 3000,
+        action: "block",
+        enabled: true,
+        filters: "dns",
+        traffic: listTraffic(["B0"]),
+      },
+      {
+        id: "N0",
+        name: "gateway-list:net:allow",
+        precedence: 1000,
+        action: "allow",
+        enabled: true,
+        filters: "l4",
+        traffic: listSniTraffic(["A0"]),
+      },
+      {
+        id: "N1",
+        name: "gateway-list:net:security",
+        precedence: 2000,
+        action: "block",
+        enabled: true,
+        filters: "l4",
+        traffic: securitySniTraffic(),
+      },
+      {
+        id: "N2",
+        name: "gateway-list:net:block",
+        precedence: 3000,
+        action: "block",
+        enabled: true,
+        filters: "l4",
+        traffic: listSniTraffic(["B0"]),
       },
     ],
   });

@@ -118,6 +118,7 @@ export async function applyCommand(options: ApplyOptions): Promise<number> {
       action: rule.action,
       enabled: rule.enabled,
       traffic: rule.traffic,
+      filters: rule.filters?.includes("l4") ? "l4" : rule.filters?.includes("dns") ? "dns" : undefined,
     }));
 
     const plan = buildApplyPlan({
@@ -211,9 +212,13 @@ export async function applyCommand(options: ApplyOptions): Promise<number> {
       existingRules,
     });
 
+    const securityNames = new Set([
+      config.policies.security.name,
+      config.policies.network.security.name,
+    ]);
     for (const rule of finalRules.rules) {
       if (rule.unchanged) continue;
-      const isSecurity = rule.name === config.policies.security.name;
+      const isSecurity = securityNames.has(rule.name);
       if (rule.enabled && !isSecurity && !rule.traffic.includes("$")) {
         throw new ApplyAbortError(`refusing to attach ${rule.name} to an empty list`);
       }
@@ -223,21 +228,26 @@ export async function applyCommand(options: ApplyOptions): Promise<number> {
         precedence: rule.precedence,
         action: rule.action,
         enabled: rule.enabled,
-        filters: ["dns"],
+        filters: [rule.filters],
         traffic: rule.traffic,
       });
     }
 
     for (const extra of finalRules.disableRules) {
       const current = existingRules.find((rule) => rule.id === extra.id);
+      const filters = current?.filters === "l4" ? "l4" : "dns";
       await upsertGatewayRule(client, prefix, {
         id: extra.id,
         name: extra.name,
         precedence: current?.precedence ?? 9000,
         action: current?.action === "allow" ? "allow" : "block",
         enabled: false,
-        filters: ["dns"],
-        traffic: current?.traffic ?? 'dns.fqdn == "__gateway-list-disabled.invalid"',
+        filters: [filters],
+        traffic:
+          current?.traffic ??
+          (filters === "l4"
+            ? 'net.sni.host == "__gateway-list-disabled.invalid"'
+            : 'dns.fqdn == "__gateway-list-disabled.invalid"'),
       });
     }
 

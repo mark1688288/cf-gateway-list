@@ -51,14 +51,21 @@ export function renderWhy(input: WhyInput): string {
 
   const allowDomain = exactAllow?.domain ?? suffixAllow?.domain;
   let policy: string;
+  let networkPolicy: string | undefined;
   if (allowHit && input.policies.allow.name) {
     policy = input.policies.allow.name;
+    if (input.policies.network.enabled) networkPolicy = input.policies.network.allow.name;
   } else if (blockHit) {
     policy = input.policies.block.name;
+    if (input.policies.network.enabled) networkPolicy = input.policies.network.block.name;
   } else if (input.policies.security.enabled) {
     policy = `${input.policies.security.name} (possible; categories not in snapshot)`;
+    if (input.policies.network.enabled) {
+      networkPolicy = `${input.policies.network.security.name} (possible; categories not in snapshot)`;
+    }
   } else {
     policy = "none";
+    if (input.policies.network.enabled) networkPolicy = "none";
   }
 
   const lines = [
@@ -76,5 +83,8 @@ export function renderWhy(input: WhyInput): string {
     );
   }
   lines.push(`  policy:         ${policy}`);
+  if (networkPolicy !== undefined) {
+    lines.push(`  network-policy: ${networkPolicy}`);
+  }
   return `${lines.join("\n")}\n`;
 }

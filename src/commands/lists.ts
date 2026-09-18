@@ -71,7 +71,8 @@ export async function listsCommand(options: ListsOptions): Promise<number> {
     for (const rule of ownedRules) {
       const prec = rule.precedence === undefined ? "?" : String(rule.precedence);
       const action = rule.action ?? "?";
-      console.log(`    ${rule.name}  precedence ${prec}  ${action}`);
+      const filter = rule.filters?.[0] ?? "-";
+      console.log(`    ${rule.name}  ${filter}  precedence ${prec}  ${action}`);
     }
     console.log(`  other rules: ${rules.length - ownedRules.length} (ignored)`);
     console.log("  wrote:      snapshots/account-quota.json");
