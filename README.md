@@ -23,7 +23,8 @@ npm install
 cp .env.example .env   # token / account id; needed for lists / diff / apply / suggested / asn
 ```
 
-Put `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.env`. Token needs Account → Zero Trust → Read + Edit.
+> [!TIP]
+> Put `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in `.env`. Token needs Account → Zero Trust → Read + Edit, Analytics & Logs → Account Analytics → Read.
 
 ```bash
 node src/cli.ts
@@ -45,7 +46,8 @@ Fork this repository, then set up **your** fork (secrets and variables are not c
    - **Secrets** tab → **New repository secret** → name `CLOUDFLARE_API_TOKEN`, paste the token
    - **Variables** tab → **New repository variable** → name `CLOUDFLARE_ACCOUNT_ID`, paste the account id (not a secret)
 
-The workflow compiles every Monday and when you run it by hand. It does **not** apply unless you check apply on a manual run, or set `AUTO_APPLY=true` for the schedule. Leave `AUTO_APPLY` off at first; read the Job Summary, then run **Sync Gateway lists** with apply checked.
+> [!NOTE]
+> The workflow compiles every Monday and when you run it by hand. It does **not** apply unless you check apply on a manual run, or set `AUTO_APPLY=true` for the schedule. Leave `AUTO_APPLY` off at first; read the Job Summary, then run **Sync Gateway lists** with apply checked.
 
 ## Workflow
 
@@ -164,7 +166,8 @@ Two layers of guards: one stops a truncated download from looking like “delete
 
 `apply` itself is an **incremental PATCH** (`append` / `remove` of drift only). It never deletes every list and recreates them. The client uses a token bucket (burst 8, refill 4/s) and retries HTTP 429 with `Retry-After` (up to 5 attempts). If other + desired exceeds `max_items`, apply refuses. A tripped guard fails the job — do not assume a half-applied rule set is in effect.
 
-Only lists and rules whose names start with `gateway-list` are managed. Dashboard-created objects are left alone.
+> [!NOTE]
+> Only lists and rules whose names start with `gateway-list` are managed. Dashboard-created objects are left alone.
 
 <img width="1376" height="768" alt="Cloudflare_Zero_Trust_GitOps_-_Slide_9" src="https://github.com/user-attachments/assets/0918aa70-fbf7-4cb4-a564-0838cccf0c5c" />
 
