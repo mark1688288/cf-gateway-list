@@ -12,7 +12,7 @@ import { loadConfig } from "../config.ts";
 import { CredentialsError, loadCloudflareCredentials } from "../env.ts";
 import { fetchText, type FetchTextOptions } from "../fetch-source.ts";
 import { readListText } from "../list-file.ts";
-import { resolveFromRepo } from "../paths.ts";
+import { defaultSnapshotsDir, resolveFromRepo } from "../paths.ts";
 import { oneEtag, readValidSourceCache, writeSourceCache } from "../source-cache.ts";
 import {
   CompileAbortError,
@@ -52,7 +52,7 @@ type LoadedSource = {
 };
 
 function snapshotsDirectory(options: CompileOptions): string {
-  return options.snapshotsDir ?? resolveFromRepo("snapshots");
+  return options.snapshotsDir ?? defaultSnapshotsDir();
 }
 
 function okRecord(

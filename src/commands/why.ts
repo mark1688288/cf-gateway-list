@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadConfig } from "../config.ts";
-import { resolveFromRepo } from "../paths.ts";
+import { defaultSnapshotsDir } from "../paths.ts";
 import { loadDesiredSnapshot, SnapshotError } from "../snapshot.ts";
 import type { DroppedSnapshot } from "../types.ts";
 import { renderWhy } from "../why.ts";
@@ -30,7 +30,7 @@ export async function whyCommand(options: WhyOptions): Promise<number> {
   }
   try {
     const config = await loadConfig(options.configPath ?? "config.yaml");
-    const snapshotsDir = options.snapshotsDir ?? resolveFromRepo("snapshots");
+    const snapshotsDir = options.snapshotsDir ?? defaultSnapshotsDir();
     const desired = await loadDesiredSnapshot(snapshotsDir);
     const dropped = await loadDropped(snapshotsDir);
     process.stdout.write(

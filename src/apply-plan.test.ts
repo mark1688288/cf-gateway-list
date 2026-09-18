@@ -220,6 +220,29 @@ test("network pack is omitted when disabled and leftover net rules are disabled"
   assert.deepEqual(plan.disableRules, [{ id: "N0", name: "gateway-list:net:block" }]);
 });
 
+test("network security can be disabled independently of DNS security", () => {
+  const plan = buildApplyPlan({
+    config: config({}, {
+      enabled: true,
+      security: {
+        name: "gateway-list:net:security",
+        precedence: 2100,
+        enabled: false,
+      },
+    }),
+    desired: desiredOf(["maps.google.com"], ["ads.example.com"]),
+    allowLiveLists: [{ id: "A0", name: "gateway-list:allow", items: ["maps.google.com"] }],
+    blockLiveLists: [{ id: "B0", name: "gateway-list:block", items: ["ads.example.com"] }],
+    existingRules: [],
+  });
+  assert.ok(plan.rules.some((rule) => rule.name === "gateway-list:security" && rule.filters === "dns"));
+  assert.equal(
+    plan.rules.some((rule) => rule.name === "gateway-list:net:security"),
+    false,
+  );
+  assert.ok(plan.rules.some((rule) => rule.name === "gateway-list:net:block"));
+});
+
 test("network pack reuses list IDs with l4 SNI traffic when enabled", () => {
   const plan = buildApplyPlan({
     config: config({}, { enabled: true }),
@@ -238,6 +261,9 @@ test("network pack reuses list IDs with l4 SNI traffic when enabled", () => {
   assert.equal(netBlock?.traffic, listSniTraffic(["B0"]));
   assert.equal(netSecurity?.filters, "l4");
   assert.equal(netSecurity?.traffic, securitySniTraffic());
+  assert.equal(netAllow?.precedence, 1100);
+  assert.equal(netSecurity?.precedence, 2100);
+  assert.equal(netBlock?.precedence, 3100);
   assert.ok(plan.rules.some((rule) => rule.name === "gateway-list:allow" && rule.filters === "dns"));
 });
 
@@ -278,7 +304,7 @@ test("planIsNoop when DNS and Network already match", () => {
       {
         id: "N0",
         name: "gateway-list:net:allow",
-        precedence: 1000,
+        precedence: 1100,
         action: "allow",
         enabled: true,
         filters: "l4",
@@ -287,7 +313,7 @@ test("planIsNoop when DNS and Network already match", () => {
       {
         id: "N1",
         name: "gateway-list:net:security",
-        precedence: 2000,
+        precedence: 2100,
         action: "block",
         enabled: true,
         filters: "l4",
@@ -296,7 +322,7 @@ test("planIsNoop when DNS and Network already match", () => {
       {
         id: "N2",
         name: "gateway-list:net:block",
-        precedence: 3000,
+        precedence: 3100,
         action: "block",
         enabled: true,
         filters: "l4",

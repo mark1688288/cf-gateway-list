@@ -6,7 +6,7 @@ import {
 import { createCfClient, CloudflareApiError } from "../cf-client.ts";
 import { loadConfig } from "../config.ts";
 import { CredentialsError, loadCloudflareCredentials } from "../env.ts";
-import { resolveFromRepo } from "../paths.ts";
+import { defaultSnapshotsDir } from "../paths.ts";
 
 export type ListsOptions = {
   configPath: string;
@@ -36,7 +36,7 @@ export async function listsCommand(options: ListsOptions): Promise<number> {
       sleep: options.sleep,
     });
     const prefix = config.plan.listNamePrefix;
-    const snapshotsDir = options.snapshotsDir ?? resolveFromRepo("snapshots");
+    const snapshotsDir = options.snapshotsDir ?? defaultSnapshotsDir();
     const quota = await readLiveAccountQuota(client, prefix);
     const rules = await client.listRules();
     const ownedRules = rules.filter((row) => row.name.startsWith(prefix));

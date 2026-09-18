@@ -2,7 +2,7 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { loadAccountQuotaSnapshot } from "../account-quota.ts";
 import { loadConfig } from "../config.ts";
-import { resolveFromRepo } from "../paths.ts";
+import { defaultSnapshotsDir } from "../paths.ts";
 import { loadDesiredSnapshot, SnapshotError } from "../snapshot.ts";
 import { loadSuggestedSnapshot } from "../gateway-logs.ts";
 import { loadSourcesSnapshot } from "../source-integrity.ts";
@@ -29,7 +29,7 @@ async function loadDropped(dir: string): Promise<DroppedSnapshot | null> {
 export async function summaryCommand(options: SummaryOptions): Promise<number> {
   try {
     const config = await loadConfig(options.configPath);
-    const snapshotsDir = options.snapshotsDir ?? resolveFromRepo("snapshots");
+    const snapshotsDir = options.snapshotsDir ?? defaultSnapshotsDir();
     const previousDir = options.previousDir ?? join(snapshotsDir, "previous");
     const current = await loadDesiredSnapshot(snapshotsDir);
     let previous;

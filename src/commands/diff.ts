@@ -11,7 +11,7 @@ import {
   liveDomains,
 } from "../domain-diff.ts";
 import { CredentialsError, loadCloudflareCredentials } from "../env.ts";
-import { resolveFromRepo } from "../paths.ts";
+import { defaultSnapshotsDir } from "../paths.ts";
 import { loadDesiredSnapshot, SnapshotError } from "../snapshot.ts";
 import { DESIRED_SNAPSHOT_VERSION, type DiffSnapshot } from "../types.ts";
 
@@ -34,7 +34,7 @@ function sample(values: string[], limit = 10): string {
 export async function diffCommand(options: DiffOptions): Promise<number> {
   try {
     const config = await loadConfig(options.configPath);
-    const snapshotsDir = options.snapshotsDir ?? resolveFromRepo("snapshots");
+    const snapshotsDir = options.snapshotsDir ?? defaultSnapshotsDir();
     const desired = await loadDesiredSnapshot(snapshotsDir);
     const creds = await loadCloudflareCredentials({
       env: options.env,

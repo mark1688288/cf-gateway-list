@@ -104,8 +104,10 @@ test("valid fixture parses", () => {
   assert.equal(config.policies.network.allow.name, "gateway-list:net:allow");
   assert.equal(config.policies.network.security.name, "gateway-list:net:security");
   assert.equal(config.policies.network.block.name, "gateway-list:net:block");
-  assert.equal(config.policies.network.allow.precedence, 1000);
-  assert.equal(config.policies.network.block.precedence, 3000);
+  assert.equal(config.policies.network.allow.precedence, 1100);
+  assert.equal(config.policies.network.security.precedence, 2100);
+  assert.equal(config.policies.network.security.enabled, true);
+  assert.equal(config.policies.network.block.precedence, 3100);
 });
 
 test("policies.network.enabled and name overrides parse", () => {
@@ -114,6 +116,7 @@ test("policies.network.enabled and name overrides parse", () => {
       network?: {
         enabled?: boolean;
         allow?: { name?: string; precedence?: number };
+        security?: { name?: string; precedence?: number; enabled?: boolean };
         block?: { name?: string; precedence?: number };
       };
     };
@@ -121,6 +124,7 @@ test("policies.network.enabled and name overrides parse", () => {
   raw.policies.network = {
     enabled: true,
     allow: { name: "gateway-list:net:allow", precedence: 1100 },
+    security: { name: "gateway-list:net:security", precedence: 2100, enabled: false },
     block: { name: "gateway-list:sni-block", precedence: 3100 },
   };
   const config = parseConfig(raw);
@@ -128,6 +132,7 @@ test("policies.network.enabled and name overrides parse", () => {
   assert.equal(config.policies.network.allow.precedence, 1100);
   assert.equal(config.policies.network.block.name, "gateway-list:sni-block");
   assert.equal(config.policies.network.security.name, "gateway-list:net:security");
+  assert.equal(config.policies.network.security.enabled, false);
 });
 
 test("network policy names must be unique, owned, and not clash with DNS", () => {
@@ -153,6 +158,15 @@ test("network policy names must be unique, owned, and not clash with DNS", () =>
     block: { name: "gateway-list:net:shared" },
   };
   throwsPath(dup, /policies\.network\.block\.name: duplicate network policy name "gateway-list:net:shared"/);
+
+  const precClash = cloneValid() as typeof validRaw & {
+    policies: typeof validRaw.policies & { network?: { allow?: { precedence: number } } };
+  };
+  precClash.policies.network = { allow: { precedence: 1000 } };
+  throwsPath(
+    precClash,
+    /policies\.network\.allow\.precedence: clashes with policies\.allow\.precedence \(Gateway rule precedence is unique across DNS and Network\)/,
+  );
 });
 
 test("optional plan.max_lists parses and rejects 0", () => {

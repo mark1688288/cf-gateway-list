@@ -60,8 +60,10 @@ export function renderWhy(input: WhyInput): string {
     if (input.policies.network.enabled) networkPolicy = input.policies.network.block.name;
   } else if (input.policies.security.enabled) {
     policy = `${input.policies.security.name} (possible; categories not in snapshot)`;
-    if (input.policies.network.enabled) {
+    if (input.policies.network.enabled && input.policies.network.security.enabled) {
       networkPolicy = `${input.policies.network.security.name} (possible; categories not in snapshot)`;
+    } else if (input.policies.network.enabled) {
+      networkPolicy = "none";
     }
   } else {
     policy = "none";

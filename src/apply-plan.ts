@@ -276,7 +276,7 @@ export function planRules(options: {
       allowPrecedence: config.policies.network.allow.precedence,
       securityName: config.policies.network.security.name,
       securityPrecedence: config.policies.network.security.precedence,
-      securityEnabled: config.policies.security.enabled,
+      securityEnabled: config.policies.network.security.enabled,
       blockName: config.policies.network.block.name,
       blockPrecedence: config.policies.network.block.precedence,
       listTraffic: listSniTraffic,
