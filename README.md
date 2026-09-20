@@ -1,5 +1,12 @@
 # Cloudflare Zero Trust Gateway GitOps CLI
 
+[![License: MIT](https://img.shields.io/github/license/mark1688288/cf-gateway-list?style=flat-square)](LICENSE)
+![Version](https://img.shields.io/badge/version-1.2.0-blue?style=flat-square)
+![Node](https://img.shields.io/badge/Node.js-22+-339933?style=flat-square&logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)
+![Cloudflare](https://img.shields.io/badge/Cloudflare_Zero_Trust-F38020?style=flat-square&logo=cloudflare&logoColor=white)
+![Last commit](https://img.shields.io/github/last-commit/mark1688288/cf-gateway-list?style=flat-square)
+
 Manage **Cloudflare Gateway** allowlists, blocklists, and ASN IP reusable lists from git.
 
 Files in git are the **desired state**. `compile` fetches [OISD](https://small.oisd.nl/)<sup>[1](#fn-oisd)</sup>, [HaGeZi](https://github.com/hagezi/dns-blocklists)<sup>[2](#fn-hagezi)</sup>, and your personal lists, folds child domains, and writes a snapshot. After you review that snapshot, `apply` incrementally patches Gateway lists and Allow/Block policies whose names start with `gateway-list`. GitHub Actions compiles weekly; **it does not change Cloudflare unless you opt in**.
