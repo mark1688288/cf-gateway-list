@@ -190,7 +190,7 @@ Two layers of guards: one stops a truncated download from looking like “delete
 
 Each list holds at most `items_per_list` items (default 1000). If the traffic filter exceeds 4096 characters it is split into `gateway-list:block-1` and so on. An empty allow set disables the Allow rule instead of attaching it to an empty list.
 
-Set `policies.network.enabled: true` to also upsert a Network (Layer 4) pack on the **same** DOMAIN lists. No extra list slots. Traffic is `any(net.sni.domains[*] in $LIST) or net.sni.host in $LIST`. Allow / Security / Block names, precedence, and `security.enabled` are set in `config.yaml` the same way as the DNS pack. Defaults:
+Set `policies.network.enabled: true` to also upsert a Network (Layer 4)<sup>[4](#fn-l4)</sup> pack on the **same** DOMAIN lists. No extra list slots. Traffic is `any(net.sni.domains[*] in $LIST) or net.sni.host in $LIST`. Allow / Security / Block names, precedence, and `security.enabled` are set in `config.yaml` the same way as the DNS pack. Defaults:
 
 | Precedence | Name | Action |
 | ---: | --- | --- |
@@ -346,3 +346,5 @@ any(net.dst.ip in $<list_id>)
 <sup id="fn-hagezi">2</sup> [HaGeZi](https://github.com/hagezi/dns-blocklists) (Light) — DNS blocklist for ads, trackers, telemetry, and some malware. By [hagezi](https://github.com/hagezi).
 
 <sup id="fn-maxmind">3</sup> [MaxMind GeoLite2-ASN](https://dev.maxmind.com/geoip/docs/databases/asn/) — IP prefixes for each autonomous system. This product includes GeoLite2 data created by MaxMind, available from [https://www.maxmind.com](https://www.maxmind.com).
+
+<sup id="fn-l4">4</sup> Cloudflare [Traffic policies](https://developers.cloudflare.com/cloudflare-one/traffic-policies/) call this a Network (Layer 4) policy (`filters: ["l4"]`). The term is Cloudflare's product name, not an OSI Model layer.
