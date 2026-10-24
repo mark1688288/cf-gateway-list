@@ -335,6 +335,10 @@ any(net.dst.ip in $<list_id>)
 
 <img width="1376" height="768" alt="Cloudflare_Zero_Trust_GitOps_-_Slide_11" src="https://github.com/user-attachments/assets/2c3aa835-8fb6-4f18-a5db-adb37765d13b" />
 
+## Demo
+
+![workflow](imgs/demo.jpeg)
+
 ## License
 
 [MIT](LICENSE) © mark1688288
